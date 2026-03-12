@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Red Light Camera Violations - Miami-Dade County</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css"/>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+#map { width: 100%; height: 100vh; }
+
+.search-panel {
+    position: absolute; top: 10px; left: 60px; z-index: 1000;
+    background: #fff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    border: 1px solid rgba(0,0,0,0.08); width: 380px; overflow: hidden;
+}
+.search-bar { display: flex; align-items: center; padding: 6px 10px; gap: 8px; border-bottom: 1px solid #e2e8f0; }
+.search-bar svg { flex-shrink: 0; color: #94a3b8; }
+.search-bar input { flex: 1; border: none; outline: none; font-size: 14px; color: #1e293b; padding: 8px 0; background: transparent; }
+.search-bar input::placeholder { color: #94a3b8; }
+.search-bar .clear-btn { background: #e2e8f0; border: none; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; display: none; align-items: center; justify-content: center; font-size: 14px; color: #64748b; line-height: 1; }
+.search-bar .clear-btn:hover { background: #cbd5e1; }
+.search-filters { display: flex; gap: 4px; padding: 6px 10px; flex-wrap: wrap; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+.filter-chip { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 500; cursor: pointer; border: 1px solid #cbd5e1; background: #fff; color: #475569; transition: all 0.15s; }
+.filter-chip:hover { background: #f1f5f9; }
+.filter-chip.active { background: #dc2626; color: #fff; border-color: #dc2626; }
+.search-results { max-height: 0; overflow-y: auto; transition: max-height 0.3s; }
+.search-results.open { max-height: 300px; }
+.result-item { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #f1f5f9; transition: background 0.1s; }
+.result-item:hover { background: #fef2f2; }
+.result-item .ri-top { display: flex; justify-content: space-between; align-items: center; }
+.result-item .ri-name { font-size: 12px; font-weight: 600; color: #0f172a; }
+.result-item .ri-date { font-size: 10px; color: #94a3b8; }
+.result-item .ri-detail { font-size: 11px; color: #64748b; margin-top: 2px; }
+.result-item .ri-match { background: #fef08a; padding: 0 2px; border-radius: 2px; }
+.search-status { padding: 8px 12px; font-size: 12px; color: #64748b; background: #f8fafc; display: flex; justify-content: space-between; align-items: center; }
+.search-status .count { font-weight: 700; color: #dc2626; }
+.search-status .zoom-btn { background: #dc2626; color: #fff; border: none; border-radius: 6px; padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer; }
+.search-status .zoom-btn:hover { background: #b91c1c; }
+
+.info-panel {
+    position: absolute; top: 10px; right: 10px; z-index: 1000;
+    background: rgba(255,255,255,0.95); color: #1e293b; padding: 14px 18px;
+    border-radius: 12px; max-width: 280px; max-height: 90vh; overflow-y: auto;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2); border: 1px solid rgba(0,0,0,0.08);
+}
+.info-panel h2 { font-size: 15px; font-weight: 700; color: #0f172a; margin-bottom: 2px; }
+.info-panel .subtitle { font-size: 11px; color: #64748b; margin-bottom: 10px; }
+.stat-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #e2e8f0; }
+.stat-label { font-size: 11px; color: #64748b; }
+.stat-value { font-size: 12px; font-weight: 700; color: #dc2626; }
+.collapse-toggle { display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; }
+.collapse-toggle:hover { opacity: 0.8; }
+.collapse-arrow { font-size: 12px; transition: transform 0.2s; color: #94a3b8; }
+.collapse-arrow.collapsed { transform: rotate(-90deg); }
+.collapsible { overflow: hidden; transition: max-height 0.3s ease, opacity 0.2s; max-height: 800px; opacity: 1; }
+.collapsible.collapsed { max-height: 0; opacity: 0; }
+.section-title { font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin: 10px 0 6px; font-weight: 700; }
+
+.preset-btn {
+    display: flex; align-items: center; gap: 6px; width: 100%; padding: 7px 10px;
+    margin-bottom: 4px; border-radius: 8px; border: 1px solid #e2e8f0;
+    background: #fff; cursor: pointer; font-size: 12px; color: #334155;
+    font-weight: 500; transition: all 0.15s; text-align: left;
+}
+.preset-btn:hover { background: #fef2f2; border-color: #fca5a5; }
+.preset-btn.active { background: #dc2626; color: #fff; border-color: #dc2626; }
+.preset-btn .preset-icon { font-size: 14px; }
+.preset-btn .preset-count { margin-left: auto; font-size: 10px; font-weight: 700; background: rgba(0,0,0,0.08); padding: 1px 6px; border-radius: 10px; }
+.preset-btn.active .preset-count { background: rgba(255,255,255,0.25); }
+
+.legend-item { display: flex; align-items: center; gap: 6px; padding: 3px 4px; font-size: 11px; color: #334155; cursor: pointer; border-radius: 6px; transition: background 0.15s; }
+.legend-item:hover { background: #fef2f2; }
+.legend-item.active-filter { background: #fee2e2; outline: 2px solid #dc2626; }
+.legend-item.dimmed { opacity: 0.3; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.15); }
+
+.clear-filter-btn { display: none; margin-top: 6px; background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; border-radius: 6px; padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer; width: 100%; text-align: center; }
+.clear-filter-btn:hover { background: #fecaca; }
+.clear-filter-btn.visible { display: block; }
+
+.leaflet-popup-content-wrapper { background: #fff; color: #1e293b; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.25); }
+.leaflet-popup-content { margin: 12px 16px; font-size: 13px; line-height: 1.5; min-width: 260px; }
+.popup-title { font-weight: 700; font-size: 13px; color: #dc2626; margin-bottom: 6px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
+.popup-section { font-weight: 700; font-size: 10px; color: #64748b; text-transform: uppercase; margin-top: 8px; margin-bottom: 3px; letter-spacing: 0.3px; }
+.popup-row { display: flex; gap: 6px; margin-bottom: 3px; }
+.popup-label { color: #64748b; font-size: 11px; min-width: 70px; font-weight: 600; flex-shrink: 0; }
+.popup-val { color: #1e293b; font-size: 12px; }
+.popup-badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.popup-violations { background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; padding: 6px 8px; margin-top: 4px; font-size: 11px; color: #92400e; line-height: 1.4; }
+
+.layer-toggle { position: absolute; bottom: 30px; left: 10px; z-index: 1000; background: #fff; padding: 6px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); display: flex; gap: 4px; }
+.layer-toggle button { background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 12px; font-weight: 500; color: #334155; }
+.layer-toggle button.active { background: #dc2626; color: #fff; border-color: #dc2626; }
+.layer-toggle button:hover:not(.active) { background: #e2e8f0; }
+
+@keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(250,204,21,0.7); } 50% { box-shadow: 0 0 0 12px rgba(250,204,21,0); } }
+.marker-highlight { animation: pulse 1.2s infinite; }
+
+.mobile-info-toggle {
+    display: none; position: absolute; z-index: 1001;
+    bottom: 16px; right: 8px;
+    background: rgba(255,255,255,0.95); border: 1px solid rgba(0,0,0,0.1);
+    border-radius: 8px; padding: 6px 12px; cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15); font-size: 11px; font-weight: 600;
+    color: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+@media (max-width: 640px) {
+    .search-panel { left: 8px; right: 8px; top: 8px; width: auto; border-radius: 10px; }
+    .search-bar { padding: 4px 8px; }
+    .search-bar input { font-size: 16px; padding: 6px 0; }
+    .search-filters { padding: 4px 8px; gap: 3px; }
+    .filter-chip { padding: 4px 8px; font-size: 10px; }
+    .search-results.open { max-height: 200px; }
+    .info-panel { top: auto; bottom: 50px; right: 8px; left: 8px; max-width: none; max-height: 35vh; padding: 10px 14px; border-radius: 10px; display: none; }
+    .info-panel.mobile-open { display: block; }
+    .info-panel h2 { font-size: 13px; }
+    .info-panel .subtitle { font-size: 10px; margin-bottom: 6px; }
+    .stat-row { padding: 3px 0; }
+    .section-title { margin: 6px 0 4px; }
+    .mobile-info-toggle { display: flex; align-items: center; gap: 4px; }
+    .layer-toggle { bottom: 16px; left: 8px; }
+    .layer-toggle button { padding: 5px 10px; font-size: 11px; }
+    .leaflet-popup-content { min-width: 200px; margin: 10px 12px; font-size: 12px; }
+    .popup-title { font-size: 12px; }
+    .popup-label { min-width: 60px; font-size: 10px; }
+    .popup-val { font-size: 11px; }
+    .popup-violations { font-size: 10px; padding: 4px 6px; }
+}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="search-panel">
+    <div class="search-bar">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input type="text" id="searchInput" placeholder="Search officer, agency, violation, location..." autocomplete="off">
+        <button class="clear-btn" id="clearBtn" onclick="clearSearch()">&#215;</button>
+    </div>
+    <div class="search-filters">
+        <div class="filter-chip active" data-field="all" onclick="toggleFilter(this)">All Fields</div>
+        <div class="filter-chip" data-field="officer" onclick="toggleFilter(this)">Officer</div>
+        <div class="filter-chip" data-field="agency" onclick="toggleFilter(this)">Agency</div>
+        <div class="filter-chip" data-field="violations" onclick="toggleFilter(this)">Violations</div>
+        <div class="filter-chip" data-field="race" onclick="toggleFilter(this)">Race</div>
+        <div class="filter-chip" data-field="location" onclick="toggleFilter(this)">Location</div>
+        <div class="filter-chip" data-field="city" onclick="toggleFilter(this)">City</div>
+    </div>
+    <div class="search-status" id="searchStatus" style="display:none;">
+        <span><span class="count" id="matchCount">0</span> matches found</span>
+        <button class="zoom-btn" onclick="zoomToResults()">Zoom to results</button>
+    </div>
+    <div class="search-results" id="searchResults"></div>
+</div>
+
+<div class="info-panel">
+    <h2>F.S. §316.075(1)(c)1 / §316.074(1)</h2>
+    <div class="subtitle">Red Light Camera Violations — Miami-Dade</div>
+    <div class="stat-row"><span class="stat-label">Mapped</span><span class="stat-value" id="visibleCount">0</span></div>
+    <div class="stat-row"><span class="stat-label">Total Dataset</span><span class="stat-value" id="totalCount">0</span></div>
+
+    <div class="section-title collapse-toggle" onclick="toggleCollapse('presets','presetsArrow')"><span>Quick Searches</span><span class="collapse-arrow" id="presetsArrow" class="collapsed">▼</span></div>
+    <div id="presets" class="collapsible collapsed"></div>
+
+    <div class="section-title collapse-toggle" style="margin-top:14px;" onclick="toggleCollapse('legend-wrap','legendArrow')"><span>Top Agencies <span style="font-size:9px;color:#94a3b8;text-transform:none;">(click to filter)</span></span><span class="collapse-arrow" id="legendArrow" class="collapsed">▼</span></div>
+    <div id="legend-wrap" class="collapsible collapsed"><div id="legend"></div><button class="clear-filter-btn" id="clearAgencyBtn" onclick="clearAgencyFilter()">✕ Clear agency filter</button></div>
+</div>
+
+<div class="layer-toggle">
+    <button id="btn-street" class="active" onclick="setLayer('street')">Street</button>
+    <button id="btn-satellite" onclick="setLayer('satellite')">Satellite</button>
+</div>
+
+<button class="mobile-info-toggle" onclick="toggleMobileInfo()">
+    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"/></svg>
+    <span id="mobileInfoLabel">Stats</span>
+</button>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
+<script>
+function toggleCollapse(contentId, arrowId) {
+    document.getElementById(contentId).classList.toggle('collapsed');
+    document.getElementById(arrowId).classList.toggle('collapsed');
+}
+function toggleMobileInfo() {
+    var panel = document.querySelector('.info-panel');
+    var label = document.getElementById('mobileInfoLabel');
+    panel.classList.toggle('mobile-open');
+    label.textContent = panel.classList.contains('mobile-open') ? 'Close' : 'Stats';
+}
+
+// DATA: Replace this array with exported citation data from Supabase
+// Each object: {lat, lng, location, date, officer, agency, city, citation, description, defendant, race, race_code, sex, age, other_violations}
+const points = [];
+
+const presets = [
+    {"label": "316.075(1)(c)1", "search": "316.075", "icon": "🚦"},
+    {"label": "316.074(1)", "search": "316.074", "icon": "🚦"},
+    {"label": "Red Light", "search": "red light", "icon": "🔴"},
+    {"label": "Camera", "search": "camera", "icon": "📷"},
+    {"label": "Traffic Signal", "search": "traffic signal", "icon": "🚥"},
+    {"label": "FHP", "search": "highway patrol", "icon": "🔍"},
+    {"label": "Miami PD", "search": "miami", "icon": "🔍"},
+    {"label": "Right on Red", "search": "right on red", "icon": "🔍"}
+];
+
+document.getElementById('totalCount').textContent = points.length;
+
+const map = L.map('map', { center: [25.77, -80.20], zoom: 11 });
+const tileLayers = {
+    street: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap', maxZoom: 19 }),
+    satellite: L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { attribution: '&copy; Google', maxZoom: 20 })
+};
+let currentLayer = tileLayers.street;
+currentLayer.addTo(map);
+function setLayer(n) { map.removeLayer(currentLayer); currentLayer=tileLayers[n]; currentLayer.addTo(map); document.querySelectorAll('.layer-toggle button').forEach(b=>b.classList.remove('active')); document.getElementById('btn-'+n).classList.add('active'); }
+
+const colorPalette = ['#e63946','#0077b6','#8338ec','#06d6a0','#ff6b35','#ffd166','#118ab2','#ef476f','#073b4c','#9b5de5','#f15bb5','#00bbf9','#00f5d4','#fee440'];
+const agencyCounts = {};
+points.forEach(p => { agencyCounts[p.agency||'Unknown']=(agencyCounts[p.agency||'Unknown']||0)+1; });
+const sortedAgencies = Object.entries(agencyCounts).sort((a,b)=>b[1]-a[1]);
+const agencyColors = {};
+sortedAgencies.forEach(([a],i) => { agencyColors[a]=colorPalette[i%colorPalette.length]; });
+const legendDiv = document.getElementById('legend');
+sortedAgencies.slice(0,8).forEach(([a,c]) => {
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    item.dataset.agency = a;
+    item.onclick = () => filterByAgency(a);
+    item.innerHTML = '<div class="legend-dot" style="background:'+agencyColors[a]+'"></div><span>'+a+' ('+c+')</span>';
+    legendDiv.appendChild(item);
+});
+
+const presetsDiv = document.getElementById('presets');
+presets.forEach((preset, idx) => {
+    const searchLower = preset.search.toLowerCase();
+    const count = points.filter(p => {
+        const text = [p.officer,p.defendant,p.agency,p.other_violations,p.description,p.race,p.sex,p.age,p.location,p.city,p.citation,p.date].join(' ').toLowerCase();
+        return text.includes(searchLower);
+    }).length;
+    const btn = document.createElement('button');
+    btn.className = 'preset-btn';
+    btn.dataset.idx = idx;
+    btn.innerHTML = '<span class="preset-icon">'+preset.icon+'</span><span>'+preset.label+'</span><span class="preset-count">'+count+'</span>';
+    btn.onclick = () => triggerPreset(idx);
+    presetsDiv.appendChild(btn);
+});
+
+const raceBadgeColors = {'White':'#3b82f6','Black':'#ef4444','Hispanic':'#f59e0b','Other':'#8b5cf6','Asian':'#06b6d4'};
+function makeIcon(color, highlight) {
+    const s=highlight?16:12, b=highlight?'3px solid #facc15':'2px solid #fff';
+    const sh=highlight?'0 0 8px 2px rgba(250,204,21,0.8)':'0 1px 4px rgba(0,0,0,0.4)';
+    const cls=highlight?'marker-highlight':'';
+    return L.divIcon({className:'',html:'<div class="'+cls+'" style="width:'+s+'px;height:'+s+'px;border-radius:50%;background:'+color+';border:'+b+';box-shadow:'+sh+';"></div>',iconSize:[s,s],iconAnchor:[s/2,s/2]});
+}
+function makePopup(p) {
+    const bc=raceBadgeColors[p.race]||'#94a3b8';
+    const rb=p.race?'<span class="popup-badge" style="background:'+bc+';color:#fff;">'+p.race+'</span>':'';
+    const ab=p.age?'<span class="popup-badge" style="background:#f1f5f9;color:#334155;margin-left:4px;">Age '+p.age+'</span>':'';
+    const ov=p.other_violations?'<div class="popup-violations"><strong>Violations:</strong> '+p.other_violations+'</div>':'';
+    return '<div class="popup-title">'+(p.location||'Unknown Location')+'</div>'+
+        '<div class="popup-section">Defendant</div>'+
+        '<div class="popup-row"><span class="popup-label">Initials</span><span class="popup-val" style="font-weight:700;">'+p.defendant+'</span></div>'+
+        '<div class="popup-row"><span class="popup-label">Profile</span><span class="popup-val">'+rb+' '+(p.sex||'')+ab+'</span></div>'+
+        '<div class="popup-section">Citation Details</div>'+
+        '<div class="popup-row"><span class="popup-label">Date</span><span class="popup-val">'+p.date+'</span></div>'+
+        '<div class="popup-row"><span class="popup-label">Officer</span><span class="popup-val">'+p.officer+'</span></div>'+
+        '<div class="popup-row"><span class="popup-label">Agency</span><span class="popup-val">'+p.agency+'</span></div>'+
+        '<div class="popup-row"><span class="popup-label">City</span><span class="popup-val">'+p.city+'</span></div>'+
+        '<div class="popup-row"><span class="popup-label">Citation #</span><span class="popup-val">'+p.citation+'</span></div>'+
+        '<div class="popup-section">Violations</div>'+ov+
+        '<div class="popup-row"><span class="popup-label">Description</span><span class="popup-val">'+p.description+'</span></div>';
+}
+
+const allMarkers = [];
+const mainCluster = L.markerClusterGroup({
+    maxClusterRadius:45, spiderfyOnMaxZoom:true, showCoverageOnHover:false, zoomToBoundsOnClick:true,
+    iconCreateFunction: function(cluster) {
+        const c=cluster.getChildCount(); let r=c>50?44:c>20?36:30;
+        let bg=c>50?'rgba(230,57,70,0.85)':c>20?'rgba(255,107,53,0.85)':'rgba(220,38,38,0.85)';
+        return L.divIcon({html:'<div style="width:'+r+'px;height:'+r+'px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:#fff;background:'+bg+';border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);">'+c+'</div>',className:'',iconSize:[r,r]});
+    }
+});
+
+points.forEach((p,i) => {
+    const color = agencyColors[p.agency]||'#dc2626';
+    const m = L.marker([p.lat,p.lng], {icon:makeIcon(color,false)}).bindPopup(makePopup(p),{maxWidth:320,maxHeight:400});
+    allMarkers.push({marker:m, point:p, color:color, index:i});
+    mainCluster.addLayer(m);
+});
+map.addLayer(mainCluster);
+
+const mdPts=points.filter(p=>p.lat>25.2&&p.lat<26.0&&p.lng>-80.9&&p.lng<-80.0);
+if(mdPts.length){const lats=mdPts.map(p=>p.lat),lngs=mdPts.map(p=>p.lng);map.fitBounds([[Math.min(...lats),Math.min(...lngs)],[Math.max(...lats),Math.max(...lngs)]],{padding:[30,30]});}
+
+document.getElementById('visibleCount').textContent = points.length;
+
+let activeAgencyFilter = null;
+let activePresetIdx = null;
+
+function applyFilters() {
+    mainCluster.clearLayers();
+    let visibleCount = 0;
+    allMarkers.forEach(m => {
+        let show = true;
+        if (activeAgencyFilter && m.point.agency !== activeAgencyFilter) show = false;
+        if (show) { m.marker.setIcon(makeIcon(m.color, false)); mainCluster.addLayer(m.marker); visibleCount++; }
+    });
+    document.getElementById('visibleCount').textContent = visibleCount;
+    document.querySelectorAll('#legend .legend-item').forEach(item => {
+        item.classList.remove('active-filter','dimmed');
+        if (activeAgencyFilter) {
+            if (item.dataset.agency === activeAgencyFilter) item.classList.add('active-filter');
+            else item.classList.add('dimmed');
+        }
+    });
+    document.getElementById('clearAgencyBtn').className = 'clear-filter-btn' + (activeAgencyFilter ? ' visible' : '');
+    if (activeAgencyFilter && visibleCount > 0) {
+        const vis = allMarkers.filter(m => m.point.agency === activeAgencyFilter);
+        const lats=vis.map(m=>m.point.lat),lngs=vis.map(m=>m.point.lng);
+        map.fitBounds([[Math.min(...lats),Math.min(...lngs)],[Math.max(...lats),Math.max(...lngs)]],{padding:[40,40],maxZoom:15});
+    }
+}
+
+function filterByAgency(agency) { activeAgencyFilter = (activeAgencyFilter === agency) ? null : agency; clearPresetHighlight(); clearSearch(); applyFilters(); }
+function clearAgencyFilter() { activeAgencyFilter = null; applyFilters(); }
+function clearPresetHighlight() { activePresetIdx = null; document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active')); }
+
+function triggerPreset(idx) {
+    activeAgencyFilter = null;
+    document.querySelectorAll('#legend .legend-item').forEach(i => i.classList.remove('active-filter','dimmed'));
+    document.getElementById('clearAgencyBtn').className = 'clear-filter-btn';
+    if (activePresetIdx === idx) { clearPresetHighlight(); clearSearch(); applyFilters(); return; }
+    activePresetIdx = idx;
+    document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.preset-btn')[idx].classList.add('active');
+    document.getElementById('searchInput').value = presets[idx].search;
+    doSearch();
+}
+
+let activeSearchFilter = 'all';
+let highlightLayer = L.layerGroup().addTo(map);
+let matchedIndices = [];
+
+function toggleFilter(el) {
+    document.querySelectorAll('.filter-chip').forEach(c=>c.classList.remove('active'));
+    el.classList.add('active');
+    activeSearchFilter = el.dataset.field;
+    doSearch();
+}
+
+function getSearchableText(p, field) {
+    if(field==='all') return [p.officer,p.defendant,p.agency,p.other_violations,p.description,p.race,p.sex,p.age,p.location,p.city,p.citation,p.date].join(' ');
+    if(field==='officer') return p.officer;
+    if(field==='agency') return p.agency;
+    if(field==='violations') return (p.other_violations||'')+' '+(p.description||'');
+    if(field==='race') return p.race+' '+p.sex;
+    if(field==='location') return p.location;
+    if(field==='city') return p.city;
+    return '';
+}
+
+function hl(text,term) { if(!term) return text; const re=new RegExp('('+term.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'); return text.replace(re,'<span class="ri-match">$1</span>'); }
+
+let searchTimeout;
+document.getElementById('searchInput').addEventListener('input', function() { clearTimeout(searchTimeout); clearPresetHighlight(); searchTimeout=setTimeout(doSearch,200); });
+document.getElementById('searchInput').addEventListener('keydown', function(e) { if(e.key==='Escape') clearSearch(); });
+
+function doSearch() {
+    const term=document.getElementById('searchInput').value.trim();
+    const clearBtnEl=document.getElementById('clearBtn');
+    const resultsDiv=document.getElementById('searchResults');
+    const statusDiv=document.getElementById('searchStatus');
+    highlightLayer.clearLayers();
+    matchedIndices=[];
+    if(!term||term.length<2) { clearBtnEl.style.display='none'; resultsDiv.innerHTML=''; resultsDiv.classList.remove('open'); statusDiv.style.display='none'; applyFilters(); return; }
+    clearBtnEl.style.display='flex';
+    const lower=term.toLowerCase();
+    const matches=[];
+    allMarkers.forEach((m,idx)=>{ if(getSearchableText(m.point,activeSearchFilter).toLowerCase().includes(lower)) matches.push(idx); });
+    matchedIndices=matches;
+    mainCluster.clearLayers();
+    allMarkers.forEach((m,idx)=>{
+        if(matches.includes(idx)){ m.marker.setIcon(makeIcon('#facc15',true)); highlightLayer.addLayer(m.marker); }
+        else { m.marker.setIcon(L.divIcon({className:'',html:'<div style="width:8px;height:8px;border-radius:50%;background:rgba(148,163,184,0.35);border:1px solid rgba(148,163,184,0.3);"></div>',iconSize:[8,8],iconAnchor:[4,4]})); mainCluster.addLayer(m.marker); }
+    });
+    document.getElementById('matchCount').textContent=matches.length;
+    document.getElementById('visibleCount').textContent=matches.length;
+    statusDiv.style.display='flex';
+    resultsDiv.innerHTML='';
+    matches.slice(0,50).forEach(idx=>{
+        const p=allMarkers[idx].point;
+        const detail=getSearchableText(p,activeSearchFilter==='all'?'violations':activeSearchFilter);
+        const item=document.createElement('div');
+        item.className='result-item';
+        item.innerHTML='<div class="ri-top"><span class="ri-name">'+hl(p.defendant||'—',term)+' <span style="color:#94a3b8;font-weight:400;">'+p.race+' '+p.sex+(p.age?', '+p.age:'')+'</span></span><span class="ri-date">'+p.date+'</span></div><div class="ri-detail">'+hl((p.officer?'Officer: '+p.officer:'')+(p.agency?' • '+p.agency:''),term)+'</div><div class="ri-detail" style="color:#92400e">'+hl(detail.substring(0,120),term)+'</div>';
+        item.onclick=()=>{map.setView([p.lat,p.lng],17);setTimeout(()=>allMarkers[idx].marker.openPopup(),300);};
+        resultsDiv.appendChild(item);
+    });
+    if(matches.length>50) resultsDiv.innerHTML+='<div style="padding:8px 12px;font-size:11px;color:#94a3b8;text-align:center;">Showing 50 of '+matches.length+' results</div>';
+    resultsDiv.classList.add('open');
+    if(matches.length>0) {
+        const lats=matches.map(i=>allMarkers[i].point.lat);
+        const lngs=matches.map(i=>allMarkers[i].point.lng);
+        if(matches.length===1) { map.setView([lats[0],lngs[0]],16); setTimeout(()=>allMarkers[matches[0]].marker.openPopup(),500); }
+        else { map.fitBounds([[Math.min(...lats),Math.min(...lngs)],[Math.max(...lats),Math.max(...lngs)]],{padding:[60,60],maxZoom:15}); }
+    }
+}
+
+function clearSearch() {
+    document.getElementById('searchInput').value='';
+    document.getElementById('clearBtn').style.display='none';
+    document.getElementById('searchResults').innerHTML='';
+    document.getElementById('searchResults').classList.remove('open');
+    document.getElementById('searchStatus').style.display='none';
+    highlightLayer.clearLayers();
+    matchedIndices=[];
+    clearPresetHighlight();
+    applyFilters();
+}
+
+function zoomToResults() {
+    if(!matchedIndices.length) return;
+    const lats=matchedIndices.map(i=>allMarkers[i].point.lat);
+    const lngs=matchedIndices.map(i=>allMarkers[i].point.lng);
+    map.fitBounds([[Math.min(...lats),Math.min(...lngs)],[Math.max(...lats),Math.max(...lngs)]],{padding:[60,60],maxZoom:15});
+}
+</script>
+</body>
+</html>
